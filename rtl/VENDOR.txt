@@ -1,0 +1,192 @@
+fx68k  0602ee4627b10f301298f2673d826cdd6baa9327  2021-02-16
+tv80   66a131c38d05ef58b3d8c4f1507a72e6e4aa5d65  2026-05-11
+jt10   45f4854f9ab43368f5a514857299ab7dfae4e6ab  2026-08-10  jotego/jt12
+jt49   7f6abfd08a2af9a92dbd5b32c71ea773248a77e2  2026-08-10  jotego/jt49 (jt12 submodule)
+
+jt10 notes
+----------
+GPLv3, which the whole core inherits (PLAN decision 2). Two LICENSE files: LICENSE
+is jt12's, LICENSE.jt49 is the submodule's.
+
+File list is jt12's own target/quartus/jt10.qip, verbatim - 62 files, flattened,
+no basename collisions. Do not curate it by hand.
+
+**jt49 is a git submodule of jt12 and `git clone --depth 1` leaves it EMPTY.** The
+qip references ../../jt49/hdl/*.v, so a plain clone silently omits the SSG - the
+3 PSG channels - and the failure mode is music that plays with parts missing
+rather than a build error. Re-fetch with:
+
+    git clone --depth 1 https://github.com/jotego/jt12.git
+    cd jt12 && git submodule update --init --depth 1 jt49
+
+No `$readmemh`, no `include` directives and no .hex/.mem data files: every ROM
+table (logsin, exprom, adpcma_lut, adpcm_dbrom) is inline. So the flattened copy
+is self-contained and nothing outside this directory has to be on a search path.
+
+*** ADPCM-B IS NOW USED, AND HAS NEVER BEEN EXERCISED. ***
+
+It was vendored but dead on Superman, whose ROM set has no adpcmb region. Syvalion
+has 512 KB of it (b51-18.bin), so the first time this code path runs will be on
+this core.
+
+CONFIRMED BY MEASUREMENT 2026-08-29, not by the ROM region existing - a region
+can ship unused. tools/mame/ymtap.lua against MAME 0.289, 120 s of attract:
+
+    ADPCM-B  regs 010-01C   872 writes   012-015 start/end, 019/01A delta-N,
+                                         01B volume, 01C 510 writes
+    ADPCM-A  regs 100-12D  1148 writes   383 key-ons, ALL SIX channels
+
+Meanwhile rtl/sound.sv ties .adpcmb_data(8'd0) and its comment says "ADPCM-B is
+unused on this board" - which is SUPERMAN's board. The comment came across with
+the fork and reads as a decision about Syvalion.
+
+CLAUDE.md's rule applies in full: bring it up at the HARDWARE CLOCK first. ADPCM
+is a RATE, not content, and the failure is silent - jt10 decoded byte-exact data
+at the correct rate from identical registers and produced a ruined waveform under
+--fast, because SDRAM latency is counted in raw clk ticks while cen shrinks.
+Correlation against a reference decode was +0.04 under --fast and +0.88 at the
+hardware clock, and every content gate passed throughout. See PLAN 3.3.
+
+LOCAL MODIFICATION 2 - jt10_adpcm.v, the ADPCM-A increment width
+-----------------------------------------------------------------
+**Likely an upstream regression, and the strongest candidate for the audible
+distortion.**
+
+The LUT is CORRECT: all 392 entries match ymfm's
+(2*(data&7)+1) * s_steps[step] / 8 exactly - checked programmatically, 0
+mismatches. It holds values up to 2910.
+
+But inc4 was `reg signed [sigw-1:0]` with sigw=12, and 12-bit SIGNED tops out at
+2047. EIGHT of the 392 deltas exceed that and were therefore added as NEGATIVE
+numbers - a sign flip, not a rounding error:
+
+  step=45 d=7  2186 -> -1910     step=47 d=6  2292 -> -1804
+  step=46 d=6  2083 -> -2013     step=47 d=7  2645 -> -1451
+  step=46 d=7  2403 -> -1693     step=48 d=5  2134 -> -1962
+                                 step=48 d=6  2522 -> -1574
+                                 step=48 d=7  2910 -> -1186
+
+Why it looks like a regression rather than a choice: the LUT's superseded values
+are still present in trailing comments and are ALL 12'o3777 = 2047, i.e.
+deliberately clamped to fit 12-bit signed. Someone replaced them with accurate
+values and did not widen the path carrying them.
+
+Fixed by widening the increment to sigw+1 = 13 bits. sigw itself stays 12: the
+ACCUMULATOR is 12-bit and wraps, which is correct and matches ymfm's
+`m_accumulator = (m_accumulator + delta) & 0xfff`. x5 is still [sigw-1:0] so the
+sum truncates to 12 bits and the wrap is preserved.
+
+Steps 45-48 are the top of the adaptation range, reached only in loud,
+rapidly-changing passages, and ADPCM is DIFFERENTIAL so a sign-flipped delta
+corrupts the accumulator from that point on while quiet audio decodes perfectly.
+That is exactly the reported symptom.
+
+A WARNING ABOUT CHECKING THIS FILE: jt10_adpcma_lut.v carries superseded values
+in trailing // comments on the same lines as the live ones. A regex that ignores
+comments matches both, and the dead value comes second, so it wins. That
+manufactured four non-existent "mismatches" and nearly produced a patch to
+correct code. Strip comments before parsing.
+
+LOCAL MODIFICATION 1 - jt10_acc.v
+-----------------------------------------------
+Upstream multiplies ADPCM-A by 7.25x "to match AES channel balance" - AES is the
+Neo Geo home console. The expression is evaluated in SIGNED 16-BIT arithmetic, so
+it OVERFLOWS and WRAPS for any sample above roughly a seventh of full scale.
+
+Measured symptoms, all three of which the wrap explains and clipping does not:
+the drum roll stayed recognisable while its loud moments broke up; the final mix
+peaked at 23% of full scale with ZERO samples near clipping; and connecting the
+sample ROM made the output QUIETER, because wrapped values partially cancel.
+
+*** CORRECTED 2026-08-29. THE PARAGRAPH THAT STOOD HERE WAS TWO FIXES OUT OF DATE. ***
+
+It said "now defaults to unity gain ... it is 7.2x too quiet and must not ship",
+and PLAN.md R6 and BUGS.md RISK-001 both repeated it. THE CODE HAS NOT BEEN AT
+UNITY SINCE THE BASELINE COMMIT. jt10_acc.v evaluates the 7.25x in 21-bit signed
+arithmetic and saturates to 16 bits, and acc_input_l/r take the saturated value
+UNCONDITIONALLY - there is no JT10_ADPCMA_GAIN_AES ifdef around it any more.
+
+The fix landed on Superman and came across with the fork; the prose describing
+the state BEFORE it did not get updated, and three documents plus the comment
+block sitting three lines above the corrected code carried it forward for four
+milestones. Nothing type-checks prose. Re-read the code the note describes.
+
+*** MEASURED 2026-08-10: THE 7.25x IS CORRECT. THE BUG IS THE 16-BIT MATH. ***
+
+On the pure-SFX sound 0x20, MAME peaks at 2020 and unity-gain ours peaks at 281.
+2020/281 = 7.19, against jt12's 7.25 - within 1%. So the multiplier is not a Neo
+Geo quirk: jt12's ADPCM path simply carries a smaller internal representation
+than the FM accumulator and this compensates for it. MAME does the equivalent
+inside (accumulator << 4) * mul >> shift; reading its code as "no extra gain"
+compared against the wrong part of its arithmetic.
+
+THE FIX IS THEREFORE NOT UNITY. Keep 7.25x and evaluate it in WIDER arithmetic,
+then saturate rather than wrap - which is what MAME does, ending in clamp16().
+THAT IS WHAT THE CODE NOW DOES.
+
+STILL OPEN, AND A DIFFERENT QUESTION: the 7.19 ratio above was measured on
+SUPERMAN's sound 0x20 and has never been re-measured here. It should transfer,
+because it compensates for jt12's internal representation rather than for any
+property of the board - but that is an argument, not a measurement. Separately,
+MAME routes Syvalion's FM at 0.75 and BOTH ADPCM paths at 1.0 (taito_h.cpp:613),
+and syvalion_core.sv applies no such balance: audio_l/r are ym_left/ym_right
+straight through. That is M5's mix gate.
+
+**Re-syncing jt10 from upstream will silently revert this.** Diff jt10_acc.v
+against upstream after any re-fetch.
+
+tv80 notes
+----------
+
+LOCAL MODIFICATION 1 - tv80_core.v, LD A,R sets its flags from I
+-----------------------------------------------------------------
+
+Upstream's Special_LD case 2'b01 loads ACC from R and then sets Z and S from *I*
+- a copy-paste from the LD A,I case four lines above it. A is right and the flags
+describe a different register.
+
+Under any program that never writes I - which is most, since interrupt mode 1
+does not need it - I is zero, so Z is SET on every LD A,R whatever R holds and S
+is always clear. A loop that reads R and tests Z can never exit. The classic
+symptom is a program hanging while trying to get a pseudo-random number, with A
+visibly taking real changing values while the flags never move.
+
+Full write-up, including the trace that found it on another core:
+docs/reference/tv80-ld-a-r-flags.md.
+
+Fixed here 2026-08-27: the flags now describe the value actually loaded, and the
+two `ifdef halves are kept consistent (with no R register at all, A is loaded
+with 0, so the flags must describe 0 rather than I).
+
+*** SYVALION CANNOT REACH THIS, AND THAT IS MEASURED, NOT ASSUMED. ***
+
+    python3 tools/scanop.py release/syvalion.rom 0x080000 0x10000 ed5f
+    -> 0 occurrences
+
+ED 5F is LD A,R. There are none in the entire 64 KB audio region, and none of
+ED 57 (LD A,I) either. Executing the instruction requires those two bytes
+adjacent in memory, so zero occurrences settles it outright rather than merely
+suggesting it.
+
+The fix is therefore NOT a bug fix for this game and no sound behaviour should
+ever be attributed to it. It is here because shipping a CPU with a known-wrong
+instruction is worse than a four-line diff, and because the next core to copy
+this directory may well execute it - the write-up notes two other cores in this
+lineage are still unfixed.
+
+ZEXDOC AND ZEXALL DO NOT COVER IT. Both deliberately exclude R, because its value
+depends on how many fetches have occurred and is not reproducible between
+implementations. tv80's 67/67 pass says nothing whatsoever about LD A,R - the
+same "a passing test bounds what it asserts, nothing more" rule CLAUDE.md already
+carries, now with a second instance in the same fifteen lines of code.
+
+THE OTHER R BUG IS FOUR LINES AWAY AND IS ALREADY CLOSED HERE. TV80_REFRESH
+guards the whole R register including its declaration, and without it LD A,R
+returns a hardcoded zero. It is defined in BOTH flows and the two must agree:
+
+    verilator/Makefile   +define+TV80_REFRESH=1
+    files.qip            set_global_assignment -name VERILOG_MACRO "TV80_REFRESH=1"
+
+**Re-syncing tv80 from upstream will silently revert this.** Diff tv80_core.v
+against upstream after any re-fetch.
+
