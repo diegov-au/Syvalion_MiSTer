@@ -89,12 +89,9 @@ between two pinouts for the graphics ROMs and has no effect on the game.
 Video, sprites with zoom, both ADPCM engines, sound and the trackball all run on
 hardware.
 
-Two things are known to be incomplete, and are listed here rather than left to
+One thing is known to be incomplete, and are listed here rather than left to
 be discovered:
 
-- **Background X zoom is not implemented.** Syvalion's backgrounds do not use
-  it — every zoom register sampled from the running game reads as unity — and
-  the reference emulator's own source marks its horizontal branch speculative.
 - **Flip Screen is not verified.** No emulator implements it correctly for this
   board family, so there is currently nothing to check it against.
 
