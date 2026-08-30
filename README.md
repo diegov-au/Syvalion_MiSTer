@@ -30,8 +30,7 @@ tilemaps and sprites, with two more Taito customs for I/O and the sound mailbox.
 | Display | 512 × 400 active in a 640 × 448 frame, 25.00 kHz / 55.80 Hz |
 
 The horizontal rate is worth noting: **25 kHz is a medium-resolution signal**,
-not the 15 kHz of most arcade boards of the period. It is what the extra
-horizontal detail costs.
+not the 15 kHz of most arcade boards of the period.
 
 ## Installing
 
