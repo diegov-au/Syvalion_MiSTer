@@ -20,8 +20,8 @@ tilemaps and sprites, with two more Taito customs for I/O and the sound mailbox.
 
 | Part | Detail |
 |---|---|
-| Main CPU | 68000 @ 12 MHz (24 MHz crystal / 2) |
-| Sound CPU | Z80 @ 4 MHz (8 MHz crystal / 2) |
+| Main CPU | 68000 @ 12 MHz |
+| Sound CPU | Z80 @ 4 MHz  |
 | Sound | YM2610 @ 8 MHz — FM, SSG, ADPCM-A and ADPCM-B |
 | Video | Taito TC0080VCO — tilemaps, sprites, sprite zoom |
 | I/O | Taito TC0040IOC — switches, DIPs, trackball counters |
