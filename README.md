@@ -17,7 +17,6 @@ Islands*, and the first game on Taito's H System board.
 
 The Taito H System is built around a single large custom video chip doing both
 tilemaps and sprites, with two more Taito customs for I/O and the sound mailbox.
-\
 
 | Part | Detail |
 |---|---|
