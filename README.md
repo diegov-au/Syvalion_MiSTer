@@ -13,6 +13,9 @@ corners and gets in its own way.
 Designed by Fukio "MTJ" Mitsuji, better known for *Bubble Bobble* and *Rainbow
 Islands*, and the first game on Taito's H System board.
 
+<img width="503" height="379" alt="image" src="https://github.com/user-attachments/assets/a7d5a4cb-efbb-4d05-aa9c-a610b25ab369" />
+
+
 ## System
 
 The Taito H System is built around a single large custom video chip doing both
